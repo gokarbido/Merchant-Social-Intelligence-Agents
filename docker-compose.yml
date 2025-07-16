@@ -1,0 +1,34 @@
+version: '3.8'
+services:
+  social-swarm:
+    build: .
+    container_name: social-swarm
+    ports:
+      - "8000:8000"
+    depends_on:
+      - ollama
+      - pgvector
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+      - PGVECTOR_DSN=postgresql://merchantuser:merchantpass@pgvector:5432/merchantdb
+    restart: unless-stopped
+  ollama:
+    image: ollama/ollama
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+  pgvector:
+    image: ankane/pgvector
+    container_name: pgvector
+    environment:
+      POSTGRES_DB: merchantdb
+      POSTGRES_USER: merchantuser
+      POSTGRES_PASSWORD: merchantpass
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+volumes:
+  ollama_data: 
