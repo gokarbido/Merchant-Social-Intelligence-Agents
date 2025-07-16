@@ -1,4 +1,6 @@
-# Merchant Social Network Agent Swarm
+![System Architecture](architecture.png)
+
+# Merchant Social Intelligence Agents
 
 ## Agent Architecture Overview
 This project implements a modular, multi-agent system for merchant social networks. Agents are orchestrated to classify, moderate, matchmake, and escalate messages, ensuring intelligent, safe, and relevant interactions.
