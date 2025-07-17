@@ -3,6 +3,7 @@ from typing import List, Dict, Optional, Any
 from agents.router_agent import RouterAgent
 from agents.matchmaker_agent import MatchmakerAgent
 from agents.moderator_agent import ModeratorAgent
+import os
 
 # Human Escalation Agent
 class HumanEscalationAgent:
@@ -40,7 +41,7 @@ class AgentOutput(BaseModel):
 class AgentOrchestrator:
     def __init__(self, merchant_data_path: str):
         self.router = RouterAgent()
-        self.matchmaker = MatchmakerAgent(merchant_data_path)
+        self.matchmaker = MatchmakerAgent(merchant_data_path, os.environ.get("PGVECTOR_DSN"))
         self.moderator = ModeratorAgent()
         self.human_escalation = HumanEscalationAgent()
         self.feedback_memory = []  # Store feedback for learning
@@ -77,7 +78,7 @@ class AgentOrchestrator:
                 source_agent_response = "Mensagem permitida."
         # Step 3: Partnership request if needed
         elif classification == "partnership_request":
-            matches = self.matchmaker.find_matches(input.user_id, input.message)
+            matches = self.matchmaker.find_matches(input.user_id, input.message, self.feedback_memory)
             workflow.append(AgentStep(agent_name="MatchmakerAgent", matches=matches))
             if matches:
                 response = f"Hi! We found {len(matches)} nearby merchants interested in shared delivery. Want an intro?"

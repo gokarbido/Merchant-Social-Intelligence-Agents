@@ -11,6 +11,7 @@ services:
     environment:
       - OLLAMA_HOST=http://ollama:11434
       - PGVECTOR_DSN=postgresql://merchantuser:merchantpass@pgvector:5432/merchantdb
+      - VECTOR_BACKEND=pgvector  # faiss or chromadb or pgvector
     restart: unless-stopped
   ollama:
     image: ollama/ollama

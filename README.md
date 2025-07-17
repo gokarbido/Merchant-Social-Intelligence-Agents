@@ -50,6 +50,63 @@ If the model is not pulled, requests to `/api/generate` will return 404 errors.
   
 4. The Ollama will run at `http://localhost:11434`.
 
+### PGVector Semantic Search (Vector Database)
+
+This project uses [PGVector](https://github.com/pgvector/pgvector) as a vector database for semantic search and matchmaking. PGVector is enabled by default when running via Docker Compose.
+
+- The `pgvector` service in `docker-compose.yml` runs a PostgreSQL database with the PGVector extension.
+- The `social-swarm` service connects to this database using the `PGVECTOR_DSN` environment variable:
+  ```
+  PGVECTOR_DSN=postgresql://merchantuser:merchantpass@pgvector:5432/merchantdb
+  ```
+- The `MatchmakerAgent` will automatically use PGVector for semantic search if this variable is set.
+- Embeddings are stored in the `merchant_embeddings` table with a `vector(384)` column.
+- When a matchmaking request is made, the agent performs a similarity search using the `<->` operator to find the most relevant merchants.
+
+#### Troubleshooting
+- If you see an error like `vector type not found in the database`, connect to the `pgvector` container and run:
+  ```sh
+  docker exec -it pgvector psql -U merchantuser -d merchantdb -c "CREATE EXTENSION IF NOT EXISTS vector;"
+  ```
+- If you see an error about `operator does not exist: vector <-> numeric[]`, ensure your code is casting the embedding to `vector` (this is handled in the current codebase).
+
+No additional setup is required for PGVector when using Docker Compose. If running outside Docker, ensure your PostgreSQL instance has the PGVector extension installed and enabled.
+
+### Selecting a Vector Search Backend (PGVector, FAISS, ChromaDB)
+
+You can choose which vector search backend to use for matchmaking by setting the `VECTOR_BACKEND` environment variable. Supported values:
+
+- `pgvector` (default): Uses the PGVector database (recommended for production)
+- `faiss`: Uses an in-memory FAISS index (fast, but not persistent)
+- `chromadb`: Uses a persistent ChromaDB index (file-based)
+
+**Embedding Model Setup:**
+- The system uses Ollama for generating embeddings. You must pull the embedding model before use:
+  ```sh
+  docker exec -it ollama ollama pull all-minilm
+  ```
+- You can change the embedding model by setting the `OLLAMA_EMBEDDING_MODEL` environment variable.
+
+**How to use:**
+
+- To use FAISS:
+  ```sh
+  export VECTOR_BACKEND=faiss
+  # or in Docker Compose, add to environment:
+  # VECTOR_BACKEND=faiss
+  ```
+- To use ChromaDB:
+  ```sh
+  export VECTOR_BACKEND=chromadb
+  # or in Docker Compose, add to environment:
+  # VECTOR_BACKEND=chromadb
+  ```
+- If not set, defaults to `pgvector`.
+
+**Note:**
+- FAISS and ChromaDB do not require a database setup, but ChromaDB will create a `.chromadb` directory for persistence.
+- PGVector is recommended for production and multi-instance deployments.
+
 ## How Agents Interact
 - **User message** → **RouterAgent** (classifies intent)
   - If moderation needed → **ModeratorAgent** (may escalate to human)

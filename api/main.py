@@ -14,7 +14,7 @@ MERCHANT_DATA_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..
 
 # Initialize agents
 router_agent = RouterAgent()
-matchmaker_agent = MatchmakerAgent(MERCHANT_DATA_PATH)
+matchmaker_agent = MatchmakerAgent(MERCHANT_DATA_PATH, os.environ.get("PGVECTOR_DSN"))
 moderator_agent = ModeratorAgent()
 
 # Initialize orchestrator
