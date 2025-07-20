@@ -27,7 +27,7 @@ This project leverages a variety of AI tools and techniques to build a modular, 
 - **Scenario Coverage:** Tests ensure that the system is relevant, responsible, and robust.
 
 ## Development Process
-- **AI-Assisted Coding:** LLMs (like ChatGPT) were used to design, refactor, and document the codebase, ensuring best practices and rapid iteration.
+- **AI-Assisted Coding:** LLMs (like ChatGPT, Claude) and coding assistant tools (like Cursor) were used to design, refactor, and document the codebase, ensuring best practices and rapid iteration.
 - **Prompt Engineering:** Iterative prompt design was used to optimize agent behavior and output quality.
 
 ## Summary
