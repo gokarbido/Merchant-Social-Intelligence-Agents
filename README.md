@@ -129,6 +129,7 @@ You can choose which vector search backend to use for matchmaking by setting the
   ```bash
   pytest
   ```
+Each test checks that the correct agent(s) handle the message and that the response and workflow match expectations.
 
 ## MCP Server/Client Integration Demo
 - **MCP Server:**
@@ -142,47 +143,8 @@ You can choose which vector search backend to use for matchmaking by setting the
 - **Feedback Loop:**
   - User feedback is stored and can be used to improve agent decisions over time.
 
-## Overview
-A multi-agent system for merchant social networks. Ingests merchant messages, routes them to LLM-powered agents, and delivers intelligent, safe, and relevant replies.
-
-### Core Agents
-- **RouterAgent**: Classifies and routes messages.
-- **MatchmakerAgent**: Recommends connections based on merchant profiles and context.
-- **ModeratorAgent**: Moderates messages for spam, abuse, or low-quality content.
-
-## Features
-- Intent classification and routing
-- Profile-based matchmaking
-- Automated moderation
-- HTTP API (FastAPI)
-- Dockerized deployment
-- Unit and E2E tests
-
-## Testing
-- Unit tests for each agent
-- E2E test for full workflow
-
 ## Data
 - Merchant profiles loaded from `fake_merchant_dataset.csv`
-
-## Example Test Scenarios
-
-The following scenarios are covered in `tests/test_orchestrator_scenarios.py`:
-
-| User Message | Expected Routing/Behavior |
-|--------------|--------------------------|
-| Tem alguém que faz doces para festas na zona leste? | Routed to Matchmaker, recommends others nearby with similar needs |
-| Eu tô cansado de receber pedido de negócios. Tem como bloquear isso? | Routed to Moderator, flagged and escalated to human if high-risk |
-| Quero dividir frete para entregas em Campinas. Quem topa? | Routed to Matchmaker, recommends others nearby with similar needs |
-| Qual foi o último jogo do Palmeiras? | Routed to fallback/Human Escalation Agent |
-
-**How to run scenario tests:**
-
-```bash
-pytest tests/test_orchestrator_scenarios.py
-```
-
-Each test checks that the correct agent(s) handle the message and that the response and workflow match expectations.
 
 
 ## LLM Output Variability & Test Robustness
