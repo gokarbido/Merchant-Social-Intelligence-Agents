@@ -41,13 +41,13 @@ class ModelContextProtocol(BaseModel):
     history: Optional[List[Dict[str, Any]]] = None
 
 @app.post("/message")
-def process_message(payload: MessageRequest):
+async def process_message(payload: MessageRequest):
     agent_input = AgentInput(message=payload.message, user_id=payload.user_id, feedback=payload.feedback)
-    agent_output = orchestrator.run(agent_input)
+    agent_output = await orchestrator.run(agent_input)
     return agent_output.dict()
 
 @app.post("/mcp/message")
-def mcp_message(payload: ModelContextProtocol):
+async def mcp_message(payload: ModelContextProtocol):
     # Pass the MCP context to the orchestrator, using only the fields it currently supports
     agent_input = AgentInput(
         message=payload.message,
@@ -55,7 +55,7 @@ def mcp_message(payload: ModelContextProtocol):
         feedback=payload.feedback
     )
     # Optionally, you can extend AgentInput and the orchestrator to use metadata/history
-    agent_output = orchestrator.run(agent_input)
+    agent_output = await orchestrator.run(agent_input)
     return agent_output.dict()
 
 @app.get("/mcp/status")

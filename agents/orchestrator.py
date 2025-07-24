@@ -22,10 +22,16 @@ class AgentInput(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
     history: Optional[List[Dict[str, Any]]] = None
 
+class MatchInfo(BaseModel):
+    id: str
+    name: str
+    city: str
+    message: str
+
 class AgentStep(BaseModel):
     agent_name: str
     classification: Optional[str] = None
-    matches: Optional[List[str]] = None
+    matches: Optional[List[MatchInfo]] = None
     moderation_action: Optional[str] = None
     moderation_reason: Optional[str] = None
     escalation_action: Optional[str] = None
@@ -46,21 +52,26 @@ class AgentOrchestrator:
         self.human_escalation = HumanEscalationAgent()
         self.feedback_memory = []  # Store feedback for learning
 
-    def run(self, input: AgentInput) -> AgentOutput:
+    async def run(self, input: AgentInput) -> AgentOutput:
+        """Process the input through the agent workflow."""
         workflow = []
-        # Step 1: Route
+        response = ""
+        source_agent_response = ""
+        classification = None
+        
+        # Step 1: Route the message
         classification = self.router.classify(input.message)
         workflow.append(AgentStep(agent_name="RouterAgent", classification=classification))
-        # Step 2: Moderate if needed
-        if classification == "moderation":
-            mod_result = self.moderator.moderate(input.message)
-            workflow.append(AgentStep(
-                agent_name="ModeratorAgent",
-                moderation_action=mod_result["action"],
-                moderation_reason=mod_result.get("reason", "")
-            ))
-            if mod_result["action"] == "flag":
-                # Escalate to human if flagged as high-risk
+        
+        # Step 2: Check for moderation needs
+        mod_result = self.moderator.moderate(input.message)
+        if mod_result["action"] != "allow":
+            workflow.append(AgentStep(agent_name="ModeratorAgent", 
+                                   moderation_action=mod_result["action"],
+                                   moderation_reason=mod_result["reason"]))
+            
+            if mod_result["action"] == "escalate":
+                # Escalate to human
                 escalation = self.human_escalation.escalate(input.message, input.user_id)
                 workflow.append(AgentStep(
                     agent_name="HumanEscalationAgent",
@@ -78,15 +89,66 @@ class AgentOrchestrator:
                 source_agent_response = "Mensagem permitida."
         # Step 3: Partnership request if needed
         elif classification == "partnership_request":
-            matches = self.matchmaker.find_matches(input.user_id, input.message, self.feedback_memory)
-            workflow.append(AgentStep(agent_name="MatchmakerAgent", matches=matches))
+            matches = await self.matchmaker.find_matches(input.user_id, input.message, self.feedback_memory)
             if matches:
-                response = f"Hi! We found {len(matches)} nearby merchants interested in shared delivery. Want an intro?"
-                source_agent_response = f"Suggested partner connections: {', '.join(matches)}"
+                workflow.append(AgentStep(agent_name="MatchmakerAgent", matches=matches))
+                # Format the matches with their details
+                match_descriptions = []
+                for match in matches:
+                    city_info = f" ({match['city']})" if match.get('city') else ""
+                    match_desc = f"{match.get('name', 'Comerciante')}{city_info}: \"{match.get('message', '')}\""
+                    match_descriptions.append(match_desc)
+                
+                response = (
+                    f"Encontrei {len(matches)} parceiros em potencial que podem te ajudar:\n\n"
+                    f"- " + "\n\n- ".join(match_descriptions) + "\n\n"
+                    "Você gostaria que eu os conecte com você?"
+                )
+                match_ids = [m.get('id', '') for m in matches]
+                source_agent_response = f"Suggested partner connections: {', '.join(match_ids)}"
             else:
-                response = "No partners found at the moment."
+                workflow.append(AgentStep(agent_name="MatchmakerAgent", matches=[]))
+                response = "No momento não encontrei parceiros disponíveis, mas posso te avisar quando surgir alguém."
                 source_agent_response = "No suggestions."
-        # Step 4: Fallback or escalate complex/unknown
+        # Step 4: Handle service requests (including social media promotion)
+        elif classification in ["service_request", "social_media_promotion"]:
+            # Prepare base response based on service type
+            if classification == "social_media_promotion":
+                base_response = (
+                    "Entendi que você precisa de ajuda com promoção nas redes sociais! "
+                    "Aqui estão algumas dicas para melhorar sua presença no Instagram:\n"
+                    "1. Poste conteúdo de qualidade regularmente\n"
+                    "2. Use hashtags relevantes\n"
+                    "3. Interaja com outros perfis do seu nicho\n\n"
+                )
+            else:
+                base_response = ""
+                
+            # Use matchmaker to find relevant connections for any service request
+            matches = await self.matchmaker.find_matches(input.user_id, input.message, self.feedback_memory)
+            
+            if matches:
+                workflow.append(AgentStep(agent_name="MatchmakerAgent", matches=matches))
+                match_list = "\n".join([
+                    f"- {m.get('name', 'Alguém')} ({m.get('city', '')}): {m.get('message', '')}"
+                    for m in matches[:3]  # Show top 3 matches
+                ])
+                response = (
+                    f"{base_response}"
+                    f"Encontrei alguns parceiros que podem te ajudar:\n"
+                    f"{match_list}\n\n"
+                    f"Gostaria que eu os conecte com você?"
+                )
+                source_agent_response = f"Found {len(matches)} potential service providers"
+            else:
+                workflow.append(AgentStep(agent_name="MatchmakerAgent", matches=[]))
+                response = (
+                    f"{base_response}"
+                    "No momento não encontrei parceiros disponíveis, mas posso te avisar quando surgir alguém. "
+                    "Posso te ajudar com mais alguma coisa?"
+                )
+                source_agent_response = "No service providers found"
+        # Step 5: Fallback or escalate complex/unknown
         else:
             # Escalate to human if fallback
             escalation = self.human_escalation.escalate(input.message, input.user_id)

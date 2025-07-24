@@ -1,5 +1,5 @@
 import pandas as pd
-from typing import List
+from typing import List, Dict
 from agents.ollama_client import OllamaClient
 import numpy as np
 import psycopg2
@@ -68,65 +68,115 @@ class MatchmakerAgent:
             return row.iloc[0].get('mcc_description', merchant_id)
         return merchant_id
 
-    def find_matches(self, user_id: str, message: str, feedback_memory=None) -> List[str]:
+    async def is_marketing_related(self, text: str) -> bool:
+        """Use LLM to determine if text is related to marketing or promotion."""
+        prompt = """
+        Analyze if the following text in Portuguese is related to marketing, advertising, promotion, 
+        social media, or digital services. Respond with only 'yes' or 'no'.
+        
+        Text: """ + text + """
+        
+        Response (yes/no): """
+        
+        try:
+            response = await self.llm.generate(prompt, max_tokens=10)
+            return 'sim' in response.lower() or 'yes' in response.lower()
+        except Exception as e:
+            print(f"Error in LLM classification: {e}")
+            return False
+
+    async def find_matches(self, user_id: str, message: str, feedback_memory=None) -> List[Dict]:
+        # Get user information
         user_row = self.df[self.df['merchant_id'] == user_id]
         if user_row.empty:
             return []
-        city = user_row.iloc[0]['city']
-        mcc_code = user_row.iloc[0]['mcc_code']
-        user_profile = f"Merchant ID: {user_id}, City: {city}, MCC: {mcc_code}, Message: {message}"
-        candidates = self.df[(self.df['city'] == city) & (self.df['merchant_id'] != user_id)]
-        candidate_profiles = [
-            f"Merchant ID: {row['merchant_id']}, City: {row['city']}, MCC: {row['mcc_code']}, Message: {row['message']}"
-            for _, row in candidates.iterrows()
-        ]
-        feedback_memory = feedback_memory or []
-        feedback_dict = {}
-        for fb in feedback_memory:
-            if fb.get('user_id') == user_id and fb.get('feedback') in ('thumbs-up', 'thumbs-down'):
-                # Use message similarity (simple substring for now, can be improved)
-                for _, row in candidates.iterrows():
-                    if fb['message'] in row['message'] or row['message'] in fb['message']:
-                        mid = row['merchant_id']
-                        if mid not in feedback_dict:
-                            feedback_dict[mid] = 0
-                        feedback_dict[mid] += 1 if fb['feedback'] == 'thumbs-up' else -1
-        if self.vector_backend == "pgvector" and self.pgvector_dsn and not user_row.empty:
-            user_emb = get_embedding(message)
-            emb_str = '[' + ','.join(str(float(x)) for x in user_emb) + ']'
-            try:
-                with self.conn.cursor() as cur:
-                    cur.execute("""
-                        SELECT merchant_id
-                        FROM merchant_embeddings
-                        WHERE merchant_id != %s
-                        ORDER BY embedding <-> %s::vector
-                        LIMIT 10
-                    """, (user_id, emb_str))
-                    match_ids = [row[0] for row in cur.fetchall()]
-                # Re-rank by feedback
-                match_ids = sorted(match_ids, key=lambda mid: -feedback_dict.get(mid, 0))
-                match_names = [self.get_merchant_name(mid) for mid in match_ids[:5]]
-                return match_names
-            except Exception as e:
-                self.conn.rollback()
-                raise e
-        elif self.vector_backend == "faiss":
-            match_ids = self.faiss_index.search(message, k=10)
-            match_ids = sorted(match_ids, key=lambda mid: -feedback_dict.get(mid, 0))
-            match_names = [self.get_merchant_name(mid) for mid in match_ids[:5]]
-            return match_names
-        elif self.vector_backend == "chromadb":
-            match_ids = self.chromadb_index.search(message, k=10)
-            match_ids = sorted(match_ids, key=lambda mid: -feedback_dict.get(mid, 0))
-            match_names = [self.get_merchant_name(mid) for mid in match_ids[:5]]
-            return match_names
-        if not candidate_profiles:
+            
+        user_city = user_row.iloc[0]['city']
+        
+        # Check if the message is marketing-related using LLM
+        is_marketing_related = await self.is_marketing_related(message)
+        
+        # Find potential matches
+        matches = []
+        for _, row in self.df.iterrows():
+            # Skip the user themselves
+            if row['merchant_id'] == user_id:
+                continue
+                
+            merchant_message = str(row['message'])
+            merchant_message_lower = merchant_message.lower()
+            
+            # Calculate match score
+            score = 0
+            
+            # 1. Check if both messages are marketing-related using LLM
+            if is_marketing_related:
+                merchant_is_marketing = await self.is_marketing_related(merchant_message)
+                if merchant_is_marketing:
+                    score += 10  # Strong match if both are marketing-related
+            
+            # 2. Check for same city
+            if row['city'] == user_city:
+                score += 3
+                
+            # 3. Check for common keywords (as fallback)
+            message_words = set(message.lower().split())
+            merchant_words = set(merchant_message_lower.split())
+            common_words = message_words & merchant_words
+            
+            # Filter out common words
+            common_words = {w for w in common_words if len(w) > 3 and w not in ['com', 'para', 'como', 'mais', 'muito']}
+            score += len(common_words) * 2
+            
+            # 4. Check for service request/offer patterns
+            request_indicators = ['preciso', 'busco', 'procurando', 'quero', 'precisamos', 'precisava']
+            offer_indicators = ['ofereço', 'faço', 'presto', 'vendo', 'trabalho com', 'sou', 'sou de', 'atendo']
+            
+            is_request = any(ind in message.lower() for ind in request_indicators)
+            is_offer = any(ind in merchant_message_lower for ind in offer_indicators)
+            
+            if is_request and is_offer:
+                score += 5  # Strong match for request-offer pairs
+                
+            # Debug info
+            debug_info = {
+                'merchant_id': row['merchant_id'],
+                'message': merchant_message,
+                'score': score,
+                'is_marketing_related': is_marketing_related,
+                'common_words': list(common_words),
+                'city_match': row['city'] == user_city
+            }
+            print(f"Debug - Merchant {row['merchant_id']} - Score: {score} - {debug_info}")
+            
+            # Only include matches with a minimum score
+            if score >= 5:  # Adjusted threshold for LLM-based matching
+                matches.append({
+                    'merchant_id': row['merchant_id'],
+                    'name': self.get_merchant_name(row['merchant_id']),
+                    'city': row['city'],
+                    'message': merchant_message,
+                    'score': score
+                })
+        
+        # Sort matches by score (highest first) and then by city (same city first)
+        matches.sort(key=lambda x: (-x['score'], 0 if x['city'] == user_city else 1))
+        
+        # Get top 5 matches
+        top_matches = matches[:5]
+        
+        # If no matches found, return empty list
+        if not top_matches:
             return []
-        prompt = (
-            f"{SYSTEM_PROMPT}\nUser: {user_profile}\nCandidates:\n" + "\n".join(candidate_profiles) + "\nMatches:"
-        )
-        result = self.llm.generate(prompt)
-        matches = [m.strip() for m in result.split(",") if m.strip() in candidates['merchant_id'].values]
-        match_names = [self.get_merchant_name(mid) for mid in matches[:5]]
-        return match_names 
+            
+        # Format the matches for the response
+        formatted_matches = []
+        for match in top_matches:
+            formatted_matches.append({
+                'id': match['merchant_id'],
+                'name': match['name'],
+                'city': match['city'],
+                'message': match['message']
+            })
+            
+        return formatted_matches 

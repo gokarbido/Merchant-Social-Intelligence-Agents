@@ -1,7 +1,21 @@
 from agents.ollama_client import OllamaClient
 
 SYSTEM_PROMPT = """
-You are a conversation router for a smart social network. Classify merchant messages as one of: 'partnership_request', 'moderation', or 'fallback'. Always respond with only the classification label.
+You are a conversation router for a merchant social network. Classify merchant messages into one of these categories:
+- 'partnership_request': Requests for business partnerships, collaborations, or joint ventures
+- 'social_media_promotion': Requests for help with social media marketing, Instagram, Facebook, or other platform promotion
+- 'service_request': Other requests for services, help, or information
+- 'moderation': Inappropriate, abusive, or spam content that needs moderation
+- 'fallback': Only use if the message doesn't fit any other category
+
+Examples:
+- "preciso de ajuda com divulgação no insta" -> social_media_promotion
+- "quero aumentar meus seguidores" -> social_media_promotion
+- "preciso de um fornecedor" -> partnership_request
+- "como faço para vender mais?" -> service_request
+- "seu lixo" -> moderation
+
+Respond with only the classification label in lowercase.
 """
 
 class RouterAgent:
